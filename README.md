@@ -64,7 +64,7 @@ Use `--config <path>` globally to override the default config location.
 
 Platform details:
 
-- **Windows:** writes per-user entries under `HKCU\\Software\\Clients\\StartMenuInternet` and `HKCU\\Software\\Classes`. Windows protects the active `UserChoice` association with a hash, so `install` opens **Settings > Default apps** and asks the user to choose Browser Dispatcher manually.
+- **Windows:** writes per-user entries under `HKCU\\Software\\Clients\\StartMenuInternet`, `HKCU\\Software\\RegisteredApplications`, and `HKCU\\Software\\Classes`. On current Windows 11 builds, `install` opens the app-specific `ms-settings:defaultapps?registeredAppUser=Browser%20Dispatcher` page. Windows protects the active `UserChoice` association with a hash, so the user must click **Set default**.
 - **macOS:** copies the Rust CLI to `~/Library/Application Support/browser-dispatcher/`, creates `~/Applications/BrowserDispatcher.app` with `osacompile`, registers its `GURL` handler with LaunchServices, and requests it as the default for `http`/`https`. If macOS declines the automatic change, choose Browser Dispatcher in **System Settings > Desktop & Dock > Default web browser**.
 - **Linux:** creates `~/.local/share/applications/browser-dispatcher.desktop` and calls `xdg-settings` when available.
 

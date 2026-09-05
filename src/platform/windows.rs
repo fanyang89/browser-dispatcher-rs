@@ -17,9 +17,11 @@
 //! ```
 //!
 //! Windows 8+ protects the `UserChoice` key with a hash, so the final
-//! "set as default" step must be done by the user in Settings
-//! (`ms-settings:defaultapps`); `install` opens it automatically.
+//! "set as default" step must be done by the user in Settings. On current
+//! Windows 11 builds, `install` opens the app-specific page with
+//! `ms-settings:defaultapps?registeredAppUser=Browser%20Dispatcher`.
 
+use std::ffi::c_void;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -29,8 +31,45 @@ use super::InstallReport;
 use crate::check::Check;
 use crate::platform::{DISPLAY_NAME, EXE_NAME};
 
+const CLIENT_NAME: &str = "BrowserDispatcher";
 const CLIENT_KEY: &str = r"Software\Clients\StartMenuInternet\BrowserDispatcher";
+const CAPABILITIES_KEY: &str = r"Software\Clients\StartMenuInternet\BrowserDispatcher\Capabilities";
+const REGISTERED_APPLICATIONS_KEY: &str = r"Software\RegisteredApplications";
+const REGISTERED_APP_NAME: &str = DISPLAY_NAME;
 const PROG_ID: &str = "BrowserDispatcherURL";
+const DEFAULT_APPS_URI: &str = "ms-settings:defaultapps?registeredAppUser=Browser%20Dispatcher";
+
+const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
+const SHCNF_IDLIST: u32 = 0;
+
+#[link(name = "shell32")]
+unsafe extern "system" {
+    fn SHChangeNotify(event_id: i32, flags: u32, item1: *const c_void, item2: *const c_void);
+}
+
+fn notify_association_changed() {
+    unsafe {
+        SHChangeNotify(
+            SHCNE_ASSOCCHANGED,
+            SHCNF_IDLIST,
+            std::ptr::null(),
+            std::ptr::null(),
+        );
+    }
+}
+
+fn open_default_apps_settings() {
+    if std::process::Command::new("explorer.exe")
+        .arg(DEFAULT_APPS_URI)
+        .spawn()
+        .is_err()
+    {
+        // Older Windows builds do not support the app-specific query string.
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", "", "ms-settings:defaultapps"])
+            .spawn();
+    }
+}
 
 pub fn find_browser_impl(id: &str) -> Option<PathBuf> {
     for tmpl in install_candidates(id) {
@@ -153,35 +192,35 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
 
     // --- Browser client registration ---
     set(CLIENT_KEY, "", DISPLAY_NAME)?;
+    set(CAPABILITIES_KEY, "ApplicationName", REGISTERED_APP_NAME)?;
     set(
-        &format!("{CLIENT_KEY}\\Capabilities"),
-        "ApplicationName",
-        DISPLAY_NAME,
-    )?;
-    set(
-        &format!("{CLIENT_KEY}\\Capabilities"),
+        CAPABILITIES_KEY,
         "ApplicationDescription",
         "Routes URLs to Firefox / Chrome / Edge / ... based on configurable rules.",
     )?;
+    set(CAPABILITIES_KEY, "ApplicationIcon", &icon_cmd)?;
     set(
-        &format!("{CLIENT_KEY}\\Capabilities"),
-        "ApplicationIcon",
-        &icon_cmd,
+        &format!("{CAPABILITIES_KEY}\\Startmenu"),
+        "StartMenuInternet",
+        CLIENT_NAME,
     )?;
     set(
-        &format!("{CLIENT_KEY}\\Capabilities"),
-        "StartMenu",
-        "BrowserDispatcher",
-    )?;
-    set(
-        &format!("{CLIENT_KEY}\\Capabilities\\UrlAssociations"),
+        &format!("{CAPABILITIES_KEY}\\UrlAssociations"),
         "http",
         PROG_ID,
     )?;
     set(
-        &format!("{CLIENT_KEY}\\Capabilities\\UrlAssociations"),
+        &format!("{CAPABILITIES_KEY}\\UrlAssociations"),
         "https",
         PROG_ID,
+    )?;
+
+    // Required for the Windows 11 app-specific Default Apps settings page.
+    // The value name must match Capabilities\\ApplicationName.
+    set(
+        REGISTERED_APPLICATIONS_KEY,
+        REGISTERED_APP_NAME,
+        CAPABILITIES_KEY,
     )?;
     set(&format!("{CLIENT_KEY}\\DefaultIcon"), "", &icon_cmd)?;
     set(
@@ -219,17 +258,18 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
         &open_cmd,
     )?;
 
-    report
-        .automated
-        .push("Registered browser client + http/https handler in HKCU".to_string());
+    notify_association_changed();
+    report.automated.push(
+        "Registered browser client + http/https handler in HKCU, including \
+         Software\\RegisteredApplications"
+            .to_string(),
+    );
 
     // Windows guards UserChoice with a hash we cannot forge, so guide the user.
-    let _ = std::process::Command::new("cmd")
-        .args(["/c", "start", "", "ms-settings:defaultapps"])
-        .spawn();
+    open_default_apps_settings();
     report.manual.push(
-        "In the Settings page that just opened, choose \"Browser Dispatcher\" and click \
-         \"Set default\" (Windows requires this step to be done by hand)."
+        "In the app-specific Settings page that just opened, click \"Set default\". \
+         Windows requires this confirmation to be done by the user."
             .to_string(),
     );
     Ok(report)
@@ -237,11 +277,15 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
 
 pub fn uninstall_registration() -> Result<()> {
     use winreg::RegKey;
-    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     delete_tree(&hkcu, CLIENT_KEY);
     delete_tree(&hkcu, &format!(r"Software\Classes\{PROG_ID}"));
+    if let Ok(key) = hkcu.open_subkey_with_flags(REGISTERED_APPLICATIONS_KEY, KEY_SET_VALUE) {
+        let _ = key.delete_value(REGISTERED_APP_NAME);
+    }
+    notify_association_changed();
     Ok(())
 }
 
@@ -286,7 +330,27 @@ pub fn registration_checks() -> Vec<Check> {
         )),
     }
 
-    // 2. Active default for http/https (UserChoice)?
+    // 2. Visible in the Windows 11 Default Apps list?
+    let capabilities = hkcu
+        .open_subkey(REGISTERED_APPLICATIONS_KEY)
+        .ok()
+        .and_then(|k| k.get_value::<String, _>(REGISTERED_APP_NAME).ok());
+    match capabilities.as_deref() {
+        Some(path) if path.eq_ignore_ascii_case(CAPABILITIES_KEY) => checks.push(Check::pass(
+            "windows: RegisteredApplications",
+            format!("{REGISTERED_APP_NAME} -> {CAPABILITIES_KEY}"),
+        )),
+        other => checks.push(Check::fail(
+            "windows: RegisteredApplications",
+            format!(
+                "expected {REGISTERED_APP_NAME} -> {CAPABILITIES_KEY}, found {}; \
+                 run `browser-dispatcher install` again",
+                other.unwrap_or("<missing>")
+            ),
+        )),
+    }
+
+    // 3. Active default for http/https (UserChoice)?
     for scheme in ["http", "https"] {
         let path = format!(
             r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\{scheme}\UserChoice"
@@ -296,15 +360,15 @@ pub fn registration_checks() -> Vec<Check> {
             .ok()
             .and_then(|k| k.get_value::<String, _>("ProgId").ok());
         match prog_id.as_deref() {
-            Some(p) if p == PROG_ID => checks.push(Check::pass(
+            Some(p) if p.eq_ignore_ascii_case(PROG_ID) => checks.push(Check::pass(
                 format!("windows: default for {scheme}"),
                 format!("UserChoice ProgId = {PROG_ID}"),
             )),
             other => checks.push(Check::warn(
                 format!("windows: default for {scheme}"),
                 format!(
-                    "current default is {}; open Settings > Default apps and pick \
-                     \"Browser Dispatcher\" (Windows only allows manual selection)",
+                    "current default is {}; open {DEFAULT_APPS_URI} and click \"Set default\" \
+                     (Windows requires user confirmation)",
                     other.unwrap_or("<none>")
                 ),
             )),
@@ -312,4 +376,26 @@ pub fn registration_checks() -> Vec<Check> {
     }
 
     checks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_11_settings_uri_targets_per_user_registration() {
+        assert_eq!(
+            DEFAULT_APPS_URI,
+            "ms-settings:defaultapps?registeredAppUser=Browser%20Dispatcher"
+        );
+        assert_eq!(REGISTERED_APP_NAME, DISPLAY_NAME);
+    }
+
+    #[test]
+    fn registered_application_points_to_capabilities() {
+        assert_eq!(
+            CAPABILITIES_KEY,
+            r"Software\Clients\StartMenuInternet\BrowserDispatcher\Capabilities"
+        );
+    }
 }
