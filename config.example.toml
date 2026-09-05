@@ -1,0 +1,35 @@
+# Browser Dispatcher example configuration
+version = 1
+
+default_browser = "firefox"
+
+# Rules are evaluated top to bottom; first match wins.
+[[rule]]
+name = "microsoft-login"
+host = ["login.microsoftonline.com", "*.microsoft.com"]
+browser = "edge"
+
+[[rule]]
+name = "google-workspace"
+host = ["accounts.google.com", "*.googleworkspace.com"]
+browser = "chrome"
+
+[[rule]]
+name = "local-development"
+url_regex = '^https?://([a-z0-9-]+\.)?localhost(:\d+)?/'
+browser = "firefox"
+private = true
+
+# Built-in ids can omit `path` and use auto-detection.
+[browsers.firefox]
+# Windows example: "C:/Program Files/Mozilla Firefox/firefox.exe"
+# macOS example: "/Applications/Firefox.app/Contents/MacOS/firefox"
+# path = "/usr/bin/firefox"
+profile = "default-release"
+args = []
+
+# Any id can be defined as a custom browser.
+[browsers.librewolf]
+path = "/Applications/LibreWolf.app/Contents/MacOS/librewolf"
+args = []
+private_args = ["-private-window"]

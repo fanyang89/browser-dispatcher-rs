@@ -1,0 +1,26 @@
+[package]
+name = "browser-dispatcher"
+version = "0.1.0"
+edition = "2024"
+description = "A configurable default browser that routes each URL to Firefox / Chrome / Edge / ... based on rules"
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "browser-dispatcher"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+dialoguer = "0.11"
+dirs = "5.0"
+globset = "0.4"
+humantime = "2.1"
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+url = "2.5"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
