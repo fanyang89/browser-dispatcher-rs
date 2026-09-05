@@ -5,10 +5,15 @@ edition = "2024"
 description = "A configurable default browser that routes each URL to Firefox / Chrome / Edge / ... based on rules"
 license = "MIT"
 readme = "README.md"
+default-run = "browser-dispatcher"
 
 [[bin]]
 name = "browser-dispatcher"
 path = "src/main.rs"
+
+[[bin]]
+name = "browser-dispatcher-handler"
+path = "src/bin/windows_handler.rs"
 
 [dependencies]
 anyhow = "1.0"

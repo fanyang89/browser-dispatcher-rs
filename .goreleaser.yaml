@@ -18,6 +18,17 @@ builds:
       - --release
       - --locked
 
+  # The registered Windows URL handler uses the GUI subsystem so URL clicks do
+  # not flash a console. The main executable remains a normal, usable CLI.
+  - id: windows-handler
+    builder: rust
+    binary: browser-dispatcher-handler
+    targets:
+      - x86_64-pc-windows-gnu
+    flags:
+      - --release
+      - --locked
+
   # Build macOS natively so CoreFoundation/CoreServices link against Apple SDKs.
   - id: macos
     builder: rust
@@ -35,7 +46,9 @@ archives:
   - id: binaries
     ids:
       - cross
+      - windows-handler
       - macos
+    allow_different_binary_count: true
     formats:
       - tar.gz
     format_overrides:

@@ -9,7 +9,7 @@
 //!   Capabilities\UrlAssociations\http|https = BrowserDispatcherURL
 //!   DefaultIcon                  = "<exe>,0"
 //!   InstallInfo\ReinstallCommand, IconsVisible
-//!   shell\open\command           = "\"<exe>\" \"%1\""
+//!   shell\open\command           = "\"<handler-exe>\" \"%1\""
 //! Software\Classes\BrowserDispatcherURL      (ProgID)
 //!   (Default) = "Browser Dispatcher URL"
 //!   URL Protocol = ""
@@ -182,7 +182,9 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
     let mut report = InstallReport::default();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let exe_str = exe.to_string_lossy();
-    let open_cmd = format!("\"{exe_str}\" \"%1\"");
+    let handler = exe.with_file_name(super::HANDLER_EXE_FILE_NAME);
+    let handler_str = handler.to_string_lossy();
+    let open_cmd = format!("\"{handler_str}\" \"%1\"");
     let icon_cmd = format!("{exe_str},0");
 
     let set = |subkey: &str, name: &str, value: &str| -> io::Result<()> {
@@ -260,7 +262,7 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
 
     notify_association_changed();
     report.automated.push(
-        "Registered browser client + http/https handler in HKCU, including \
+        "Registered browser client + console-free http/https handler in HKCU, including \
          Software\\RegisteredApplications"
             .to_string(),
     );
@@ -304,9 +306,24 @@ pub fn registration_checks() -> Vec<Check> {
 
     let mut checks = Vec::new();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let stable = super::stable_exe_path(None);
+    let stable = super::stable_handler_exe_path(None);
 
-    // 1. Registered as a browser client?
+    if stable.is_file() {
+        checks.push(Check::pass(
+            "windows: URL handler binary",
+            stable.display().to_string(),
+        ));
+    } else {
+        checks.push(Check::fail(
+            "windows: URL handler binary",
+            format!(
+                "{} missing; run `browser-dispatcher install`",
+                stable.display()
+            ),
+        ));
+    }
+
+    // 1. Registered as a browser client through the GUI-subsystem handler?
     let registered = hkcu
         .open_subkey(format!("{CLIENT_KEY}\\shell\\open\\command"))
         .ok()

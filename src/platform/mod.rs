@@ -27,6 +27,8 @@ use windows as imp;
 pub const EXE_NAME: &str = env!("CARGO_BIN_NAME");
 #[cfg(windows)]
 pub const EXE_FILE_NAME: &str = concat!(env!("CARGO_BIN_NAME"), ".exe");
+#[cfg(windows)]
+pub const HANDLER_EXE_FILE_NAME: &str = concat!(env!("CARGO_BIN_NAME"), "-handler.exe");
 #[cfg(not(windows))]
 pub const EXE_FILE_NAME: &str = env!("CARGO_BIN_NAME");
 pub const DISPLAY_NAME: &str = "Browser Dispatcher";
@@ -160,6 +162,11 @@ pub fn stable_install_dir(app_dir: Option<&Path>) -> PathBuf {
 /// Where the previous step put the executable.
 pub fn stable_exe_path(app_dir: Option<&Path>) -> PathBuf {
     stable_install_dir(app_dir).join(EXE_FILE_NAME)
+}
+
+#[cfg(windows)]
+pub fn stable_handler_exe_path(app_dir: Option<&Path>) -> PathBuf {
+    stable_install_dir(app_dir).join(HANDLER_EXE_FILE_NAME)
 }
 
 #[derive(Debug, Default)]

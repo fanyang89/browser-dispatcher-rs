@@ -37,6 +37,9 @@ pub fn run(args: InstallOptions, cfg_path: Option<&Path>) -> Result<()> {
         println!("Binary already up to date: {}", stable.display());
     }
 
+    #[cfg(windows)]
+    install_windows_handler(&current)?;
+
     // Make `browser-dispatcher <cmd>` convenient on unix if ~/.local/bin exists.
     #[cfg(unix)]
     link_into_local_bin(&stable);
@@ -117,6 +120,25 @@ fn empty_config() -> config::Config {
         rules: Vec::new(),
         browsers: Default::default(),
     }
+}
+
+#[cfg(windows)]
+fn install_windows_handler(current_cli: &Path) -> Result<()> {
+    let source = current_cli.with_file_name(platform::HANDLER_EXE_FILE_NAME);
+    let destination = platform::stable_handler_exe_path(None);
+    if !source.is_file() {
+        anyhow::bail!(
+            "Windows URL handler is missing at {}; install both binaries with \
+             `cargo install --path .` or use the release archive",
+            source.display()
+        );
+    }
+    if util::copy_if_needed(&source, &destination)? {
+        println!("Installed URL handler: {}", destination.display());
+    } else {
+        println!("URL handler already up to date: {}", destination.display());
+    }
+    Ok(())
 }
 
 /// Best-effort symlink into ~/.local/bin when that directory already exists.
