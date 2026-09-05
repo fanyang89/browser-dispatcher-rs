@@ -1,0 +1,95 @@
+name: Platform tests
+
+on:
+  push:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - "src/**"
+      - .github/workflows/platform-tests.yml
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - "src/**"
+      - .github/workflows/platform-tests.yml
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Unit tests
+        run: cargo test --all-targets --locked
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Release build
+        run: cargo build --release --locked
+
+      - name: Dispatch smoke test
+        shell: pwsh
+        run: |
+          @'
+          version = 1
+          default_browser = "firefox"
+
+          [[rule]]
+          name = "microsoft"
+          host = "*.microsoft.com"
+          browser = "edge"
+          '@ | Set-Content -Encoding utf8 smoke-config.toml
+
+          $output = & .\target\release\browser-dispatcher.exe `
+            --config smoke-config.toml `
+            dispatch --dry-run https://login.microsoft.com/
+
+          Write-Host $output
+          if ($output -notmatch 'edge \(microsoft\)') {
+            throw "Unexpected dispatch result: $output"
+          }
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Unit tests
+        run: cargo test --all-targets --locked
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Release build
+        run: cargo build --release --locked
+
+      - name: Dispatch smoke test
+        shell: bash
+        run: |
+          cat > smoke-config.toml <<'EOF'
+          version = 1
+          default_browser = "firefox"
+
+          [[rule]]
+          name = "microsoft"
+          host = "*.microsoft.com"
+          browser = "edge"
+          EOF
+
+          output="$(./target/release/browser-dispatcher \
+            --config smoke-config.toml \
+            dispatch --dry-run https://login.microsoft.com/)"
+
+          printf '%s\n' "$output"
+          [[ "$output" == *"edge (microsoft)"* ]]
