@@ -18,6 +18,7 @@ Supported registration targets:
 - Interactive installation wizard
 - `doctor` validation for config, browser executables, OS registration, installed binary freshness, and an end-to-end dry-run
 - Dispatch log with simple size rotation
+- GoReleaser archives and checksums for Linux, Windows, and macOS
 
 ## Quick start
 
@@ -150,6 +151,31 @@ Every browser entry supports:
 ## Logs
 
 Dispatch results are appended next to the config file as `dispatch.log`. It rotates automatically after 256 KiB. `doctor` prints the five most recent entries.
+
+## Releases
+
+Tags matching `v*` trigger [`.github/workflows/release.yml`](.github/workflows/release.yml). The Cargo package version should match the tag, for example `version = "0.2.0"` with tag `v0.2.0`.
+
+Published artifacts:
+
+- Linux x86_64 musl: `.tar.gz`
+- Windows x86_64 GNU: `.zip`
+- macOS x86_64 and arm64: `.tar.gz`
+- SHA-256 checksums: `checksums.txt`
+
+The release workflow runs on macOS so native Apple frameworks are available. It uses native Cargo for macOS targets and `cargo-zigbuild` for Linux/Windows targets. A manually dispatched workflow produces a non-published snapshot by default.
+
+Validate the configuration locally:
+
+```sh
+goreleaser check
+```
+
+A full local snapshot requires macOS, Zig, and `cargo-zigbuild`:
+
+```sh
+goreleaser release --snapshot --clean
+```
 
 ## Development
 

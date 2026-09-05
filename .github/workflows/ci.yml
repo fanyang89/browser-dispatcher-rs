@@ -23,3 +23,13 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt -- --check
+
+  goreleaser-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.18.0
+          args: check

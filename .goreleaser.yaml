@@ -1,0 +1,62 @@
+version: 2
+
+project_name: browser-dispatcher
+
+before:
+  hooks:
+    - cargo test --locked
+
+builds:
+  # Linux/Windows cross-builds use GoReleaser's default `cargo zigbuild`.
+  - id: cross
+    builder: rust
+    binary: browser-dispatcher
+    targets:
+      - x86_64-unknown-linux-musl
+      - x86_64-pc-windows-gnu
+    flags:
+      - --release
+      - --locked
+
+  # Build macOS natively so CoreFoundation/CoreServices link against Apple SDKs.
+  - id: macos
+    builder: rust
+    binary: browser-dispatcher
+    tool: cargo
+    command: build
+    targets:
+      - x86_64-apple-darwin
+      - aarch64-apple-darwin
+    flags:
+      - --release
+      - --locked
+
+archives:
+  - id: binaries
+    ids:
+      - cross
+      - macos
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - config.example.toml
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
