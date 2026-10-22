@@ -136,7 +136,8 @@ See [`config.example.toml`](config.example.toml) for a fuller example.
 - A rule matches when either its `host` or `url_regex` matcher succeeds.
 - Bare inputs such as `example.com` are normalized to `https://example.com/`.
 - `private = true` uses the browser's known private/incognito flag. Custom browsers can define `private_args`.
-- If a matched browser cannot launch, the dispatcher tries `default_browser` once.
+- If a matched browser cannot launch, the dispatcher tries `default_browser` once, preserving the private-mode requirement.
+- A private request fails rather than opening a normal window when no private-window flags are known.
 
 ### Browser overrides
 

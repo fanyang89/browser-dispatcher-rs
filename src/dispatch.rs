@@ -183,7 +183,7 @@ pub fn resolve_browser(cfg: &Config, id: &str) -> Result<ResolvedBrowser> {
             id: id.to_string(),
             path,
             extra_args: bc.args.clone(),
-            private_args: Vec::new(),
+            private_args: bc.private_args.clone(),
             profile: None,
         }
     } else {
@@ -207,8 +207,8 @@ pub fn resolve_browser(cfg: &Config, id: &str) -> Result<ResolvedBrowser> {
 /// Spawn the browser for a URL.
 pub fn launch(browser: &ResolvedBrowser, url: &str, private: bool) -> Result<()> {
     if private && browser.private_args.is_empty() {
-        eprintln!(
-            "warning: browser '{}' has no known private-window flag; opening a normal window",
+        bail!(
+            "browser '{}' has no known private-window flag; refusing to open a normal window",
             browser.id
         );
     }
@@ -329,13 +329,21 @@ fn resolve_and_launch(cfg: &Config, decision: &Decision, url: &str) -> Result<St
         launch(&rb, url, private)?;
         Ok(id.to_string())
     };
+    launch_with_fallback(cfg, decision, attempt)
+}
+
+fn launch_with_fallback(
+    cfg: &Config,
+    decision: &Decision,
+    mut attempt: impl FnMut(&str, bool) -> Result<String>,
+) -> Result<String> {
     attempt(&decision.browser_id, decision.private).or_else(|first| {
         if decision.browser_id != cfg.default_browser {
             eprintln!(
                 "warning: {} failed ({first:#}); falling back to default browser '{}'",
                 decision.browser_id, cfg.default_browser
             );
-            attempt(&cfg.default_browser, false).map_err(|second| {
+            attempt(&cfg.default_browser, decision.private).map_err(|second| {
                 second.context(format!(
                     "matched browser '{}' and fallback '{}' both failed",
                     decision.browser_id, cfg.default_browser
@@ -363,6 +371,45 @@ mod tests {
             url_regex: None,
             browser: browser.into(),
             private: false,
+        }
+    }
+
+    #[test]
+    fn private_launch_without_flags_is_rejected_before_spawn() {
+        let browser = ResolvedBrowser {
+            id: "custom".into(),
+            path: std::env::current_exe().unwrap(),
+            extra_args: Vec::new(),
+            private_args: Vec::new(),
+            profile: None,
+        };
+        let err = launch(&browser, "https://example.com/", true).unwrap_err();
+        assert!(err.to_string().contains("refusing to open a normal window"));
+    }
+
+    #[test]
+    fn fallback_preserves_privacy_requirement() {
+        for private in [false, true] {
+            let cfg: Config = toml::from_str(&config::default_config_toml("firefox")).unwrap();
+            let decision = Decision {
+                browser_id: "chrome".into(),
+                private,
+                rule_name: None,
+            };
+            let mut attempts = Vec::new();
+            let actual = launch_with_fallback(&cfg, &decision, |id, requested_private| {
+                attempts.push((id.to_string(), requested_private));
+                if id == "chrome" {
+                    bail!("unavailable");
+                }
+                Ok(id.to_string())
+            })
+            .unwrap();
+            assert_eq!(actual, "firefox");
+            assert_eq!(
+                attempts,
+                vec![("chrome".into(), private), ("firefox".into(), private)]
+            );
         }
     }
 
