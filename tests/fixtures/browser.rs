@@ -3,7 +3,8 @@ use std::{env, fs, path::PathBuf};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    let directory = PathBuf::from(env::var_os("BROWSER_DISPATCHER_TEST_OUTPUT").expect("output directory"));
+    let directory = env::var_os("BROWSER_DISPATCHER_TEST_OUTPUT").map(PathBuf::from)
+        .unwrap_or_else(|| env::current_exe().unwrap().parent().unwrap().join("records"));
     fs::create_dir_all(&directory).unwrap();
     // Each process owns a file, so concurrent URL deliveries cannot interleave.
     let output = directory.join(format!("{}.args", std::process::id()));

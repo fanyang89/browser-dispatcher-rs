@@ -6,12 +6,16 @@ on:
       - Cargo.toml
       - Cargo.lock
       - "src/**"
+      - "tests/**"
+      - "scripts/platform_smoke.py"
       - .github/workflows/platform-tests.yml
   pull_request:
     paths:
       - Cargo.toml
       - Cargo.lock
       - "src/**"
+      - "tests/**"
+      - "scripts/platform_smoke.py"
       - .github/workflows/platform-tests.yml
   workflow_dispatch:
 
@@ -33,6 +37,9 @@ jobs:
 
       - name: Release build
         run: cargo build --release --locked
+
+      - name: OS handler lifecycle smoke test
+        run: python scripts/platform_smoke.py
 
       - name: Dispatch smoke test
         shell: pwsh
@@ -73,6 +80,9 @@ jobs:
 
       - name: Release build
         run: cargo build --release --locked
+
+      - name: OS handler lifecycle smoke test
+        run: python scripts/platform_smoke.py
 
       - name: Dispatch smoke test
         shell: bash
