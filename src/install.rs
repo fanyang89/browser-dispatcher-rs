@@ -170,29 +170,12 @@ pub fn uninstall() -> Result<()> {
     println!("  \u{2714} registration removed");
 
     let stable_dir = platform::stable_install_dir(None);
-    #[cfg(unix)]
-    {
-        if std::fs::remove_dir_all(&stable_dir).is_ok() {
-            println!("  \u{2714} removed {}", stable_dir.display());
-        }
-    }
+    remove_installed_file(&stable_dir.join(platform::EXE_FILE_NAME))?;
     #[cfg(windows)]
-    {
-        // The running copy may be in use; ignore failures and tell the user.
-        let exe = stable_dir.join(format!("{}.exe", platform::EXE_NAME));
-        if std::fs::remove_dir_all(&stable_dir).is_ok() {
-            println!("  \u{2714} removed {}", stable_dir.display());
-        } else {
-            println!(
-                "  ! could not remove {}; delete it manually after closing terminals",
-                exe.display()
-            );
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = stable_dir;
-    }
+    remove_installed_file(&stable_dir.join(platform::HANDLER_EXE_FILE_NAME))?;
+    // Config and logs can share this directory (notably on macOS).
+    // Remove it only when empty; never recursively delete user data.
+    let _ = std::fs::remove_dir(&stable_dir);
 
     // Uninstalling on Windows/macOS cannot restore the previous default browser.
     #[cfg(any(windows, target_os = "macos"))]
@@ -203,4 +186,41 @@ pub fn uninstall() -> Result<()> {
         config::default_path().display()
     );
     Ok(())
+}
+
+fn remove_installed_file(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => println!("  \u{2714} removed {}", path.display()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!(
+                    "failed to remove {}; close running processes and retry",
+                    path.display()
+                )
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uninstall_preserves_colocated_user_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join(platform::EXE_FILE_NAME);
+        let config = dir.path().join("config.toml");
+        let log = dir.path().join("dispatch.log");
+        std::fs::write(&exe, "binary").unwrap();
+        std::fs::write(&config, "user config").unwrap();
+        std::fs::write(&log, "user log").unwrap();
+        remove_installed_file(&exe).unwrap();
+        remove_installed_file(&exe).unwrap();
+        assert!(std::fs::remove_dir(dir.path()).is_err());
+        assert_eq!(std::fs::read_to_string(config).unwrap(), "user config");
+        assert_eq!(std::fs::read_to_string(log).unwrap(), "user log");
+    }
 }
