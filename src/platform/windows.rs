@@ -36,6 +36,8 @@ const CLIENT_KEY: &str = r"Software\Clients\StartMenuInternet\BrowserDispatcher"
 const CAPABILITIES_KEY: &str = r"Software\Clients\StartMenuInternet\BrowserDispatcher\Capabilities";
 const REGISTERED_APPLICATIONS_KEY: &str = r"Software\RegisteredApplications";
 const REGISTERED_APP_NAME: &str = DISPLAY_NAME;
+const HANDLER_APP_PATH: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\App Paths\browser-dispatcher-handler.exe";
 const PROG_ID: &str = "BrowserDispatcherURL";
 const DEFAULT_APPS_URI: &str = "ms-settings:defaultapps?registeredAppUser=Browser%20Dispatcher";
 
@@ -195,6 +197,13 @@ pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> 
         key.set_value(name, &value)
     };
 
+    // Tell ShellExecuteEx to pass URLs directly rather than downloading them
+    // into INetCache and supplying a local filename (App Paths / UseUrl).
+    set(HANDLER_APP_PATH, "", &handler_str)?;
+    set(HANDLER_APP_PATH, "SupportedProtocols", "http:https")?;
+    let (app_path, _) = hkcu.create_subkey(HANDLER_APP_PATH)?;
+    app_path.set_value("UseUrl", &1u32)?;
+
     // --- Browser client registration ---
     set(CLIENT_KEY, "", DISPLAY_NAME)?;
     set(CAPABILITIES_KEY, "ApplicationName", REGISTERED_APP_NAME)?;
@@ -289,6 +298,7 @@ pub fn uninstall_registration() -> Result<()> {
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     delete_tree(&hkcu, CLIENT_KEY);
+    delete_tree(&hkcu, HANDLER_APP_PATH);
     delete_tree(&hkcu, &format!(r"Software\Classes\{PROG_ID}"));
     if let Ok(key) = hkcu.open_subkey_with_flags(REGISTERED_APPLICATIONS_KEY, KEY_SET_VALUE) {
         let _ = key.delete_value(REGISTERED_APP_NAME);
@@ -328,6 +338,19 @@ pub fn registration_checks() -> Vec<Check> {
             ),
         ));
     }
+
+    let use_url = hkcu
+        .open_subkey(HANDLER_APP_PATH)
+        .ok()
+        .and_then(|key| key.get_value::<u32, _>("UseUrl").ok());
+    checks.push(if use_url == Some(1) {
+        Check::pass("windows: direct URL delivery", "App Paths UseUrl = 1")
+    } else {
+        Check::fail(
+            "windows: direct URL delivery",
+            "App Paths UseUrl missing; run `browser-dispatcher install`",
+        )
+    });
 
     // 1. Registered as a browser client through the GUI-subsystem handler?
     let registered = hkcu

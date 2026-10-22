@@ -93,7 +93,7 @@ def main():
     cli = Path("target/release/browser-dispatcher" + suffix).resolve()
     if windows:
         import winreg
-        for key in [r"Software\Clients\StartMenuInternet\BrowserDispatcher", r"Software\Classes\BrowserDispatcherURL"]:
+        for key in [r"Software\Clients\StartMenuInternet\BrowserDispatcher", r"Software\Classes\BrowserDispatcherURL", r"Software\Microsoft\Windows\CurrentVersion\App Paths\browser-dispatcher-handler.exe"]:
             try:
                 existing = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key)
             except FileNotFoundError:
@@ -130,6 +130,9 @@ def main():
             sentinel = stable / "config.toml"
             sentinel.write_text("preserve this user configuration", encoding="utf-8")
             if windows:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\browser-dispatcher-handler.exe") as key:
+                    assert winreg.QueryValueEx(key, "UseUrl") == (1, winreg.REG_DWORD)
+                    assert winreg.QueryValueEx(key, "SupportedProtocols")[0] == "http:https"
                 handler = stable / "browser-dispatcher-handler.exe"
                 data = handler.read_bytes()
                 pe = struct.unpack_from("<I", data, 0x3C)[0]
@@ -183,7 +186,7 @@ def main():
             assert not bundle.exists()
         else:
             assert not (stable / "browser-dispatcher-handler.exe").exists()
-            for key in [r"Software\Clients\StartMenuInternet\BrowserDispatcher", r"Software\Classes\BrowserDispatcherURL"]:
+            for key in [r"Software\Clients\StartMenuInternet\BrowserDispatcher", r"Software\Classes\BrowserDispatcherURL", r"Software\Microsoft\Windows\CurrentVersion\App Paths\browser-dispatcher-handler.exe"]:
                 try:
                     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key):
                         raise AssertionError(f"Registration remains: {key}")

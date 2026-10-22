@@ -118,6 +118,15 @@ fn missing_and_unlaunchable_targets_fall_back_privately() {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("broken.exe");
         if exists {
+            // Executable text without a shebang can be interpreted by a shell
+            // on some platforms. A missing interpreter is a spawn-time error.
+            #[cfg(unix)]
+            std::fs::write(
+                &target,
+                format!("#!{}\n", dir.path().join("missing-interpreter").display()),
+            )
+            .unwrap();
+            #[cfg(not(unix))]
             std::fs::write(&target, "not an executable").unwrap();
             #[cfg(unix)]
             {
