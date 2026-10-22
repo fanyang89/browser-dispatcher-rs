@@ -114,8 +114,12 @@ def main():
         records = work / "records"
         config = work / "custom config.toml"
         run("rustc", "tests/fixtures/browser.rs", "-o", fake)
-        content = ('version = 1\ndefault_browser = "fake"\n[browsers.fake]\n'
-                   f'path = {json.dumps(str(fake))}\nargs = ["work profile 中文"]\n')
+        content = ('version = 1\ndefault_browser = "fallback"\n'
+                   '[[rule]]\nname = "work"\nhost = "example.com"\n'
+                   'browser = "fake"\nprivate = true\n[browsers.fake]\n'
+                   f'path = {json.dumps(str(fake))}\nargs = ["work profile 中文"]\n'
+                   'private_args = ["--private"]\n[browsers.fallback]\n'
+                   f'path = {json.dumps(str(fake))}\nargs = ["fallback"]\n')
         config.write_text(content, encoding="utf-8")
         expected = []
         try:
@@ -141,8 +145,17 @@ def main():
                     windows_open(url)
                 else:
                     run("/usr/bin/open", "-a", bundle, url)
-                expected.append(["work profile 中文", url])
+                expected.append(["--private", "work profile 中文", url])
                 wait_records(records, expected)
+            # Deliver a burst without waiting for each browser process.
+            for number in range(5):
+                url = f"https://example.com/burst/{number}"
+                if windows:
+                    windows_open(url)
+                else:
+                    run("/usr/bin/open", "-a", bundle, url)
+                expected.append(["--private", "work profile 中文", url])
+            wait_records(records, expected)
             # Config errors must not start any browser through the real handler.
             config.write_text("invalid TOML", encoding="utf-8")
             if windows:

@@ -200,3 +200,10 @@ For distributable macOS builds, replace ad-hoc signing with a Developer ID signa
 ## License
 
 MIT
+
+### Platform acceptance
+
+See [platform acceptance](docs/platform-acceptance.md) for native OS-handler CI
+coverage and the remaining desktop/browser acceptance matrix. A `started` dispatch
+log entry confirms process creation, not page loading. Windows handler bootstrap
+failures are recorded in `handler.log` beside the installed handler.
