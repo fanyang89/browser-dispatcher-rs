@@ -134,6 +134,7 @@ See [`config.example.toml`](config.example.toml) for a fuller example.
 - `*.example.com` matches `example.com`, `a.example.com`, and nested subdomains.
 - `url_regex` matches the normalized full URL and is case-sensitive.
 - A rule matches when either its `host` or `url_regex` matcher succeeds.
+- Missing, malformed, or invalid configuration stops dispatch with an error (also recorded in `dispatch.log`); it never silently bypasses rules.
 - Bare inputs such as `example.com` are normalized to `https://example.com/`.
 - `private = true` uses the browser's known private/incognito flag. Custom browsers can define `private_args`.
 - If a matched browser cannot launch, the dispatcher tries `default_browser` once, preserving the private-mode requirement.

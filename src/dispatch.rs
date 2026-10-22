@@ -269,11 +269,18 @@ pub fn run_dispatch(
     let path = cfg_path
         .map(std::path::PathBuf::from)
         .unwrap_or_else(config::default_path);
-    let cfg = match config::Config::load(&path) {
+    let cfg = match config::Config::load_validated(&path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("warning: {e:#}; using built-in defaults for this dispatch");
-            Config::fallback_default()
+            util::append_log(
+                &path,
+                &format!(
+                    "{} config_error={}",
+                    util::timestamp(),
+                    util::single_line(&format!("{e:#}"))
+                ),
+            );
+            return Err(e);
         }
     };
     let (engine, warnings) = Engine::new(&cfg);

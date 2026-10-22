@@ -92,24 +92,30 @@ fn string_or_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Erro
 }
 
 impl Config {
-    pub fn fallback_default() -> Config {
-        let preferred = platform::detect_all()
-            .first()
-            .map(|(def, _)| def.id.to_string())
-            .unwrap_or_else(|| "firefox".to_string());
-        Config {
-            version: CONFIG_VERSION,
-            default_browser: preferred,
-            rules: Vec::new(),
-            browsers: HashMap::new(),
-        }
-    }
-
     pub fn load(path: &Path) -> Result<Config> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config file {}", path.display()))?;
         let cfg: Config = toml::from_str(&text)
             .with_context(|| format!("failed to parse config file {}", path.display()))?;
+        Ok(cfg)
+    }
+
+    /// Validate before dispatch so invalid rules cannot silently change routing.
+    pub fn load_validated(path: &Path) -> Result<Config> {
+        let cfg = Self::load(path)?;
+        let failures: Vec<String> = cfg
+            .validate()
+            .into_iter()
+            .filter(|check| check.level == crate::check::Level::Fail)
+            .map(|check| format!("{}: {}", check.title, check.detail))
+            .collect();
+        if !failures.is_empty() {
+            bail!(
+                "invalid configuration {}: {}",
+                path.display(),
+                failures.join("; ")
+            );
+        }
         Ok(cfg)
     }
 
@@ -171,6 +177,17 @@ impl Config {
                 }
             }
             for pat in &rule.host {
+                if pat.trim().is_empty() {
+                    checks.push(Check::fail(
+                        format!("{t}: host pattern"),
+                        "host pattern is empty",
+                    ));
+                } else if let Err(e) = globset::Glob::new(pat.trim()) {
+                    checks.push(Check::fail(
+                        format!("{t}: host pattern {pat:?}"),
+                        e.to_string(),
+                    ));
+                }
                 if pat.contains('/') {
                     checks.push(Check::warn(
                         format!("{t}: host pattern {pat:?}"),
@@ -199,7 +216,12 @@ impl Config {
 }
 
 fn check_browser_id(title: &str, id: &str, cfg: &Config) -> Vec<Check> {
-    let id = id.trim();
+    if id != id.trim() {
+        return vec![Check::fail(
+            title.to_string(),
+            "browser id contains surrounding whitespace",
+        )];
+    }
     if id.is_empty() {
         return vec![Check::fail(title.to_string(), "browser id is empty")];
     }
