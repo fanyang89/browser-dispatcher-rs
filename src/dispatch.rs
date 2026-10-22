@@ -193,6 +193,29 @@ pub fn resolve_browser(cfg: &Config, id: &str) -> Result<ResolvedBrowser> {
         );
     };
 
+    let metadata = std::fs::metadata(&resolved.path).with_context(|| {
+        format!(
+            "browser '{id}' is not accessible at {}",
+            resolved.path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        bail!(
+            "browser '{id}' path is not a file: {}",
+            resolved.path.display()
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            bail!(
+                "browser '{id}' is not executable: {}",
+                resolved.path.display()
+            );
+        }
+    }
+
     if resolved.private_args.is_empty()
         && let Some(def) = platform::catalog_def(id)
     {
@@ -372,6 +395,52 @@ mod tests {
             browser: browser.into(),
             private: false,
         }
+    }
+
+    #[test]
+    fn explicit_browser_path_must_be_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg: Config = toml::from_str(&config::default_config_toml("custom")).unwrap();
+        for path in [dir.path().join("missing"), dir.path().to_path_buf()] {
+            cfg.browsers.insert(
+                "custom".into(),
+                BrowserConfig {
+                    path: Some(path),
+                    ..Default::default()
+                },
+            );
+            assert!(resolve_browser(&cfg, "custom").is_err());
+        }
+        cfg.browsers.insert(
+            "custom".into(),
+            BrowserConfig {
+                path: Some(std::env::current_exe().unwrap()),
+                ..Default::default()
+            },
+        );
+        assert!(resolve_browser(&cfg, "custom").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_browser_path_requires_execute_permission() {
+        use std::os::unix::fs::PermissionsExt;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::set_permissions(file.path(), std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mut cfg: Config = toml::from_str(&config::default_config_toml("custom")).unwrap();
+        cfg.browsers.insert(
+            "custom".into(),
+            BrowserConfig {
+                path: Some(file.path().to_path_buf()),
+                ..Default::default()
+            },
+        );
+        assert!(
+            resolve_browser(&cfg, "custom")
+                .unwrap_err()
+                .to_string()
+                .contains("not executable")
+        );
     }
 
     #[test]
