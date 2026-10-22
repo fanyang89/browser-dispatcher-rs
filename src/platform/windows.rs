@@ -297,9 +297,9 @@ pub fn uninstall_registration() -> Result<()> {
     use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    delete_tree(&hkcu, CLIENT_KEY);
-    delete_tree(&hkcu, HANDLER_APP_PATH);
-    delete_tree(&hkcu, &format!(r"Software\Classes\{PROG_ID}"));
+    delete_tree(&hkcu, CLIENT_KEY)?;
+    delete_tree(&hkcu, HANDLER_APP_PATH)?;
+    delete_tree(&hkcu, &format!(r"Software\Classes\{PROG_ID}"))?;
     if let Ok(key) = hkcu.open_subkey_with_flags(REGISTERED_APPLICATIONS_KEY, KEY_SET_VALUE) {
         let _ = key.delete_value(REGISTERED_APP_NAME);
     }
@@ -307,13 +307,14 @@ pub fn uninstall_registration() -> Result<()> {
     Ok(())
 }
 
-fn delete_tree(parent: &winreg::RegKey, subkey: &str) {
-    if let Ok(k) = parent.open_subkey(subkey) {
-        for child in k.enum_keys().flatten() {
-            delete_tree(&k, &child);
-        }
+fn delete_tree(parent: &winreg::RegKey, subkey: &str) -> io::Result<()> {
+    // winreg opens the subtree with deletion rights; recursively opening it
+    // read-only and ignoring delete errors leaves registrations behind.
+    match parent.delete_subkey_all(subkey) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
-    let _ = parent.delete_subkey(subkey);
 }
 
 pub fn registration_checks() -> Vec<Check> {
@@ -427,6 +428,24 @@ pub fn registration_checks() -> Vec<Check> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deletes_nested_registration_and_tolerates_missing_tree() {
+        use winreg::{RegKey, enums::HKEY_CURRENT_USER};
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let path = format!(
+            r"Software\BrowserDispatcherDeletionTest-{}",
+            std::process::id()
+        );
+        let (leaf, _) = hkcu
+            .create_subkey(format!(r"{path}\shell\open\command"))
+            .unwrap();
+        leaf.set_value("", &"test command").unwrap();
+        drop(leaf);
+        delete_tree(&hkcu, &path).unwrap();
+        assert!(hkcu.open_subkey(&path).is_err());
+        delete_tree(&hkcu, &path).unwrap();
+    }
 
     #[test]
     fn windows_11_settings_uri_targets_per_user_registration() {
