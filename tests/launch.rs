@@ -98,6 +98,8 @@ fn real_launch_preserves_special_urls_and_private_arguments() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
     let actual = records(dir.path(), urls.len());
     for url in urls {
         let normalized = url::Url::parse(url).unwrap().to_string();

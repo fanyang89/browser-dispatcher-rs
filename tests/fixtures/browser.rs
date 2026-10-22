@@ -10,5 +10,7 @@ fn main() {
     let output = directory.join(format!("{}.args", std::process::id()));
     let temporary = output.with_extension("tmp");
     fs::write(&temporary, args.join("\0")).unwrap();
+    println!("fake browser stdout must not reach the handler");
+    eprintln!("fake browser stderr must not reach the handler");
     fs::rename(temporary, output).unwrap();
 }

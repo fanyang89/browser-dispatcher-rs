@@ -236,6 +236,11 @@ pub fn launch(browser: &ResolvedBrowser, url: &str, private: bool) -> Result<()>
         );
     }
     let mut cmd = Command::new(&browser.path);
+    // The browser can outlive the handler. Inherited pipes would keep callers
+    // such as AppleScript's `do shell script` waiting for browser shutdown.
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
     if let Some(profile) = &browser.profile {
         cmd.arg("-P").arg(profile);
     }
@@ -320,7 +325,7 @@ pub fn run_dispatch(
             Ok(actual) => util::append_log(
                 &path,
                 &format!(
-                    "{} url={} -> {} via={} ok",
+                    "{} url={} -> {} via={} started",
                     util::timestamp(),
                     url.as_str(),
                     actual,
