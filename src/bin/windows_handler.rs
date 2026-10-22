@@ -21,9 +21,20 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg(windows)]
 fn main() {
-    // There is deliberately nowhere to print an error: this executable has no
-    // console. Normal dispatch failures are written to dispatch.log by the CLI.
-    let _ = run();
+    if let Err(error) = run() {
+        // Bootstrap failures happen before the CLI can write dispatch.log.
+        if let Ok(handler) = std::env::current_exe() {
+            use std::io::Write;
+            if let Ok(mut log) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(handler.with_file_name("handler.log"))
+            {
+                let _ = writeln!(log, "handler error: {error}");
+            }
+        }
+        std::process::exit(1);
+    }
 }
 
 #[cfg(windows)]

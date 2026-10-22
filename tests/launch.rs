@@ -148,3 +148,21 @@ fn missing_and_unlaunchable_targets_fall_back_privately() {
         );
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn handler_reports_missing_cli_instead_of_silent_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let handler = dir.path().join("browser-dispatcher-handler.exe");
+    std::fs::copy(env!("CARGO_BIN_EXE_browser-dispatcher-handler"), &handler).unwrap();
+    let status = Command::new(handler)
+        .arg("https://example.com/")
+        .status()
+        .unwrap();
+    assert!(!status.success());
+    assert!(
+        std::fs::read_to_string(dir.path().join("handler.log"))
+            .unwrap()
+            .contains("handler error:")
+    );
+}
