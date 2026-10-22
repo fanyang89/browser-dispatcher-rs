@@ -15,7 +15,7 @@ pub fn stable_install_dir(_app_dir: Option<&Path>) -> PathBuf {
     std::env::temp_dir().join(env!("CARGO_BIN_NAME"))
 }
 
-pub fn install_registration(_exe: &Path) -> Result<InstallReport> {
+pub fn install_registration(_exe: &Path, _config: &Path) -> Result<InstallReport> {
     bail!("this operating system is not supported for default-browser registration")
 }
 

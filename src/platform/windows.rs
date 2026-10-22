@@ -175,7 +175,7 @@ pub fn stable_install_dir(_app_dir: Option<&Path>) -> PathBuf {
         .join(EXE_NAME)
 }
 
-pub fn install_registration(exe: &Path) -> Result<InstallReport> {
+pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> {
     use winreg::RegKey;
     use winreg::enums::HKEY_CURRENT_USER;
 
@@ -184,7 +184,10 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
     let exe_str = exe.to_string_lossy();
     let handler = exe.with_file_name(super::HANDLER_EXE_FILE_NAME);
     let handler_str = handler.to_string_lossy();
-    let open_cmd = format!("\"{handler_str}\" \"%1\"");
+    let open_cmd = format!(
+        "\"{handler_str}\" --config \"{}\" dispatch -- \"%1\"",
+        config.display()
+    );
     let icon_cmd = format!("{exe_str},0");
 
     let set = |subkey: &str, name: &str, value: &str| -> io::Result<()> {
@@ -235,7 +238,10 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
     set(
         &format!("{CLIENT_KEY}\\InstallInfo"),
         "ReinstallCommand",
-        &format!("\"{exe_str}\" install --no-wizard"),
+        &format!(
+            "\"{exe_str}\" --config \"{}\" install --no-wizard",
+            config.display()
+        ),
     )?;
     {
         let (key, _) = hkcu.create_subkey(format!("{CLIENT_KEY}\\InstallInfo"))?;

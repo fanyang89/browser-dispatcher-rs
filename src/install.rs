@@ -81,7 +81,9 @@ pub fn run(args: InstallOptions, cfg_path: Option<&Path>) -> Result<()> {
     }
 
     // 3. Register with the OS.
-    let report = platform::install_registration(&stable)?;
+    let path = std::fs::canonicalize(&path)
+        .with_context(|| format!("failed to resolve config path {}", path.display()))?;
+    let report = platform::install_registration(&stable, &path)?;
     for step in &report.automated {
         println!("  \u{2714} {step}");
     }

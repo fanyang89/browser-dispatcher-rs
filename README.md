@@ -54,6 +54,7 @@ browser-dispatcher uninstall
 ```
 
 Use `--config <path>` globally to override the default config location.
+`install` records its absolute config path in the OS handler; reinstall to change it.
 
 ### `install`
 

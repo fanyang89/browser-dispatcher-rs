@@ -157,13 +157,15 @@ fn applescript_string(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-fn applet_script(exe: &Path) -> String {
+fn applet_script(exe: &Path, config: &Path) -> String {
     format!(
         "on open location theURL\n\
          \tset cliPath to {}\n\
-         \tdo shell script quoted form of cliPath & \" \" & quoted form of theURL\n\
+         \tset configPath to {}\n\
+         \tdo shell script quoted form of cliPath & \" --config \" & quoted form of configPath & \" dispatch -- \" & quoted form of theURL\n\
          end open location\n",
-        applescript_string(&exe.to_string_lossy())
+        applescript_string(&exe.to_string_lossy()),
+        applescript_string(&config.to_string_lossy())
     )
 }
 
@@ -221,7 +223,7 @@ fn info_plist(version: &str) -> String {
     )
 }
 
-pub fn install_registration(exe: &Path) -> Result<InstallReport> {
+pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> {
     let mut report = InstallReport::default();
     let bundle = bundle_path();
     if let Some(parent) = bundle.parent() {
@@ -237,7 +239,7 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
         .arg("-o")
         .arg(&bundle)
         .arg("-e")
-        .arg(applet_script(exe))
+        .arg(applet_script(exe, config))
         .output()
         .context("failed to run /usr/bin/osacompile")?;
     if !output.status.success() {
@@ -371,4 +373,21 @@ pub fn registration_checks() -> Vec<Check> {
         }
     }
     checks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn applet_passes_config_as_quoted_argument() {
+        let script = applet_script(
+            Path::new("/Applications/My CLI"),
+            Path::new("/Users/test/My Config.toml"),
+        );
+        assert!(script.contains("set configPath to \"/Users/test/My Config.toml\""));
+        assert!(script.contains("quoted form of configPath"));
+        assert!(script.contains("dispatch --"));
+        assert_eq!(applescript_string("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
 }

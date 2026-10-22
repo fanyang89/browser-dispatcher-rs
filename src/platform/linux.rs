@@ -37,7 +37,7 @@ pub fn stable_install_dir(_app_dir: Option<&Path>) -> PathBuf {
         .join(EXE_NAME)
 }
 
-pub fn install_registration(exe: &Path) -> Result<InstallReport> {
+pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> {
     let mut report = InstallReport::default();
     let path = desktop_file_path();
     if let Some(parent) = path.parent() {
@@ -50,12 +50,13 @@ pub fn install_registration(exe: &Path) -> Result<InstallReport> {
          Name={DISPLAY_NAME}\n\
          GenericName=Default browser dispatcher\n\
          Comment=Route URLs to different browsers based on rules\n\
-         Exec=\"{exe}\" dispatch %U\n\
+         Exec={exe} --config {config} dispatch -- %U\n\
          Terminal=false\n\
          NoDisplay=true\n\
          Categories=Network;WebBrowser;\n\
          MimeType=x-scheme-handler/http;x-scheme-handler/https;\n",
-        exe = exe.display(),
+        exe = desktop_argument(exe),
+        config = desktop_argument(config),
     );
     std::fs::write(&path, desktop)?;
     report.automated.push(format!("Created {}", path.display()));
@@ -138,4 +139,40 @@ pub fn registration_checks() -> Vec<Check> {
         )),
     }
     checks
+}
+
+// Escape both the Exec quoting layer and the desktop-entry string layer.
+fn desktop_argument(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    let mut quoted = String::from("\"");
+    for c in value.chars() {
+        match c {
+            '\\' | '\"' | '`' | '$' => {
+                quoted.push('\\');
+                quoted.push(c);
+            }
+            '%' => quoted.push_str("%%"),
+            _ => quoted.push(c),
+        }
+    }
+    quoted.push('\"');
+    quoted
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desktop_config_argument_is_quoted_and_escaped() {
+        assert_eq!(
+            desktop_argument(Path::new("/home/test/My Config.toml")),
+            "\"/home/test/My Config.toml\""
+        );
+        assert_eq!(desktop_argument(Path::new("/a%f/$b")), "\"/a%%f/\\\\$b\"");
+    }
 }

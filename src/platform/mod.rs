@@ -177,8 +177,8 @@ pub struct InstallReport {
     pub manual: Vec<String>,
 }
 
-pub fn install_registration(exe: &Path) -> Result<InstallReport> {
-    imp::install_registration(exe)
+pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> {
+    imp::install_registration(exe, config)
 }
 
 pub fn uninstall_registration() -> Result<()> {
