@@ -201,6 +201,8 @@ fn info_plist(version: &str) -> String {
     <true/>
     <key>NSAppleScriptEnabled</key>
     <true/>
+    <key>OSAAppletStayOpen</key>
+    <true/>
     <key>OSAAppletShowStartupScreen</key>
     <false/>
     <key>CFBundleURLTypes</key>
@@ -231,11 +233,13 @@ pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> 
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
     if bundle.exists() {
+        quit_applet(&bundle)?;
         std::fs::remove_dir_all(&bundle)
             .with_context(|| format!("failed to replace {}", bundle.display()))?;
     }
 
     let output = std::process::Command::new("/usr/bin/osacompile")
+        .arg("-s")
         .arg("-o")
         .arg(&bundle)
         .arg("-e")
@@ -309,9 +313,29 @@ pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> 
     Ok(report)
 }
 
+// Stop the resident event receiver before replacing or deleting its bundle.
+fn quit_applet(bundle: &Path) -> Result<()> {
+    let app = applescript_string(&bundle.to_string_lossy());
+    let output = std::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(format!(
+            "if application {app} is running then tell application {app} to quit"
+        ))
+        .output()
+        .context("failed to stop URL-handler applet")?;
+    if !output.status.success() {
+        bail!(
+            "failed to stop URL-handler applet: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(())
+}
+
 pub fn uninstall_registration() -> Result<()> {
     let bundle = bundle_path();
     if bundle.exists() {
+        quit_applet(&bundle)?;
         std::fs::remove_dir_all(&bundle)
             .with_context(|| format!("failed to remove {}", bundle.display()))?;
     }

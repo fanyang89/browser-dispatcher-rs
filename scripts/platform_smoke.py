@@ -18,6 +18,7 @@ def windows_open(url):
     # Explicit class activation exercises the registered ProgID without changing
     # protected UserChoice or requiring Settings UI automation.
     from ctypes import wintypes as w
+    import winreg
 
     class ExecuteInfo(ctypes.Structure):
         _fields_ = [
@@ -32,7 +33,7 @@ def windows_open(url):
 
     info = ExecuteInfo()
     info.cbSize = ctypes.sizeof(info)
-    info.fMask = 0x00000001 | 0x00000100 | 0x00000400  # CLASSNAME, NOASYNC, NO_UI
+    info.fMask = 0x00000003 | 0x00000100 | 0x00000400  # CLASSKEY, NOASYNC, NO_UI
     info.lpVerb = "open"
     info.lpFile = url
     info.lpClass = "BrowserDispatcherURL"
@@ -40,8 +41,10 @@ def windows_open(url):
     shell = ctypes.WinDLL("shell32", use_last_error=True)
     shell.ShellExecuteExW.argtypes = [ctypes.POINTER(ExecuteInfo)]
     shell.ShellExecuteExW.restype = w.BOOL
-    if not shell.ShellExecuteExW(ctypes.byref(info)):
-        raise ctypes.WinError(ctypes.get_last_error())
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\BrowserDispatcherURL") as key:
+        info.hkeyClass = int(key)
+        if not shell.ShellExecuteExW(ctypes.byref(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
 
 
 def mac_defaults():
@@ -86,7 +89,7 @@ def wait_records(directory, expected):
             assert sorted(actual) == sorted(expected), (actual, expected)
             return
         time.sleep(0.1)
-    raise AssertionError(f"Timed out waiting for {len(expected)} browser invocations")
+    raise AssertionError(f"Timed out waiting for {len(expected)} browser invocations: {actual!r}")
 
 
 def main():
