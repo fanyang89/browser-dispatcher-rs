@@ -264,10 +264,6 @@ pub fn install_registration(exe: &Path, config: &Path) -> Result<InstallReport> 
         "Browser Dispatcher URL",
     )?;
     set(&format!(r"Software\Classes\{PROG_ID}"), "URL Protocol", "")?;
-    // A URL handler must always receive the URI, including explicit-class
-    // ShellExecute activation (FTA_AlwaysUseDirectInvoke).
-    let (progid, _) = hkcu.create_subkey(format!(r"Software\Classes\{PROG_ID}"))?;
-    progid.set_value("EditFlags", &0x0040_0000u32)?;
     set(
         &format!(r"Software\Classes\{PROG_ID}\DefaultIcon"),
         "",

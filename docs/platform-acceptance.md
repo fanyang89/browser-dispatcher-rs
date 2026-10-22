@@ -15,8 +15,13 @@ custom config, dispatches special URLs and a burst through native OS activation,
 and verifies recorded browser arguments and uninstall preservation. macOS default
 associations are saved and restored. Windows UserChoice is never overridden.
 
-- Windows uses ShellExecuteEx with the registered ProgID. It checks the GUI PE
-  subsystem, not the visual absence of all possible console flashes.
+- Windows executes the installed ProgID command for HTTP(S) and separately uses
+  normal ShellExecuteEx protocol activation through a temporary unique scheme
+  bound to that same command. The temporary scheme is removed afterward. This
+  avoids forced file-class activation, which can download a URL into INetCache
+  rather than exercise protocol dispatch. The protected HTTP(S) default choice
+  still requires desktop acceptance. The test checks the GUI PE subsystem, not
+  the visual absence of all possible console flashes.
 - macOS uses `open -a BrowserDispatcher.app`, delivering LaunchServices URL events.
 - Neither explicitly targeted activation proves that a user's default-browser
   choice works. Neither a fake browser nor a successful process spawn proves a

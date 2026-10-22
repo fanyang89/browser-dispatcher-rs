@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 
 def run(*args):
@@ -15,10 +16,9 @@ def run(*args):
 
 
 def windows_open(url):
-    # Explicit class activation exercises the registered ProgID without changing
-    # protected UserChoice or requiring Settings UI automation.
+    # Normal protocol activation; forcing a file class treats URLs as documents
+    # and can download them rather than exercising protocol dispatch.
     from ctypes import wintypes as w
-    import winreg
 
     class ExecuteInfo(ctypes.Structure):
         _fields_ = [
@@ -33,18 +33,38 @@ def windows_open(url):
 
     info = ExecuteInfo()
     info.cbSize = ctypes.sizeof(info)
-    info.fMask = 0x00000003 | 0x00000100 | 0x00000400  # CLASSKEY, NOASYNC, NO_UI
+    info.fMask = 0x00000100 | 0x00000400  # NOASYNC, NO_UI
     info.lpVerb = "open"
     info.lpFile = url
-    info.lpClass = "BrowserDispatcherURL"
     info.nShow = 0
     shell = ctypes.WinDLL("shell32", use_last_error=True)
     shell.ShellExecuteExW.argtypes = [ctypes.POINTER(ExecuteInfo)]
     shell.ShellExecuteExW.restype = w.BOOL
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\BrowserDispatcherURL") as key:
-        info.hkeyClass = int(key)
-        if not shell.ShellExecuteExW(ctypes.byref(info)):
-            raise ctypes.WinError(ctypes.get_last_error())
+    if not shell.ShellExecuteExW(ctypes.byref(info)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def windows_registered_command():
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\BrowserDispatcherURL\shell\open\command") as key:
+        command = winreg.QueryValueEx(key, "")[0]
+    assert command.count('"%1"') == 1
+    return command
+
+
+def windows_test_protocol(command):
+    import winreg
+    scheme = "browser-dispatcher-smoke-" + uuid.uuid4().hex
+    root = "Software\\Classes\\" + scheme
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, root) as key:
+        winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, root + r"\shell\open\command") as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+
+    def cleanup():
+        for suffix in [r"\shell\open\command", r"\shell\open", r"\shell", ""]:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, root + suffix)
+    return scheme, cleanup
 
 
 def mac_defaults():
@@ -131,6 +151,8 @@ def main():
                    f'path = {json.dumps(str(fake))}\nargs = ["fallback"]\n')
         config.write_text(content, encoding="utf-8")
         expected = []
+        cleanup_protocol = lambda: None
+        children = []
         try:
             # Reinstall checks idempotency and keeps the custom config binding.
             for _ in range(2):
@@ -142,6 +164,8 @@ def main():
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\browser-dispatcher-handler.exe") as key:
                     assert winreg.QueryValueEx(key, "UseUrl") == (1, winreg.REG_DWORD)
                     assert winreg.QueryValueEx(key, "SupportedProtocols")[0] == "http:https"
+                command = windows_registered_command()
+                scheme, cleanup_protocol = windows_test_protocol(command)
                 handler = stable / "browser-dispatcher-handler.exe"
                 data = handler.read_bytes()
                 pe = struct.unpack_from("<I", data, 0x3C)[0]
@@ -154,14 +178,21 @@ def main():
             ]
             for url in urls:
                 if windows:
-                    windows_open(url)
+                    # Execute precisely the installed association command for
+                    # HTTP(S), without changing the user's protected defaults.
+                    children.append(subprocess.Popen(command.replace('"%1"', subprocess.list2cmdline([url]))))
                 else:
                     run("/usr/bin/open", "-a", bundle, url)
                 expected.append(["--private", "work profile 中文", url.replace("'", "%27")])
                 wait_records(records, expected)
+                if windows:
+                    native_url = url.replace("https:", scheme + ":", 1).replace("'", "%27")
+                    windows_open(native_url)
+                    expected.append(["--private", "work profile 中文", native_url])
+                    wait_records(records, expected)
             # Deliver a burst without waiting for each browser process.
             for number in range(5):
-                url = f"https://example.com/burst/{number}"
+                url = f"{scheme if windows else 'https'}://example.com/burst/{number}"
                 if windows:
                     windows_open(url)
                 else:
@@ -171,7 +202,7 @@ def main():
             # Config errors must not start any browser through the real handler.
             config.write_text("invalid TOML", encoding="utf-8")
             if windows:
-                windows_open("https://example.com/invalid")
+                windows_open(f"{scheme}://example.com/invalid")
             else:
                 # AppleScript may report a shell failure dialog, so config error
                 # delivery is covered by the CLI integration suite on macOS.
@@ -187,6 +218,9 @@ def main():
             try:
                 restore()
             finally:
+                for child in children:
+                    assert child.wait(timeout=30) == 0
+                cleanup_protocol()
                 run(cli, "uninstall")
         assert config.exists(), "Uninstall deleted custom config"
         assert sentinel.read_text(encoding="utf-8") == "preserve this user configuration"
