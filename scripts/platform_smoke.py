@@ -50,6 +50,8 @@ def mac_defaults():
     cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint]
     cf.CFStringCreateWithCString.restype = ctypes.c_void_p
     cf.CFRelease.argtypes = [ctypes.c_void_p]
+    cf.CFEqual.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    cf.CFEqual.restype = ctypes.c_bool
     ls.LSCopyDefaultHandlerForURLScheme.argtypes = [ctypes.c_void_p]
     ls.LSCopyDefaultHandlerForURLScheme.restype = ctypes.c_void_p
     ls.LSSetDefaultHandlerForURLScheme.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
@@ -64,7 +66,11 @@ def mac_defaults():
 
     def restore():
         for key, handler in saved:
-            status = ls.LSSetDefaultHandlerForURLScheme(key, handler)
+            current = ls.LSCopyDefaultHandlerForURLScheme(key)
+            unchanged = current and cf.CFEqual(current, handler)
+            if current:
+                cf.CFRelease(current)
+            status = 0 if unchanged else ls.LSSetDefaultHandlerForURLScheme(key, handler)
             cf.CFRelease(handler)
             cf.CFRelease(key)
             if status:
@@ -148,7 +154,7 @@ def main():
                     windows_open(url)
                 else:
                     run("/usr/bin/open", "-a", bundle, url)
-                expected.append(["--private", "work profile 中文", url])
+                expected.append(["--private", "work profile 中文", url.replace("'", "%27")])
                 wait_records(records, expected)
             # Deliver a burst without waiting for each browser process.
             for number in range(5):
@@ -157,7 +163,7 @@ def main():
                     windows_open(url)
                 else:
                     run("/usr/bin/open", "-a", bundle, url)
-                expected.append(["--private", "work profile 中文", url])
+                expected.append(["--private", "work profile 中文", url.replace("'", "%27")])
             wait_records(records, expected)
             # Config errors must not start any browser through the real handler.
             config.write_text("invalid TOML", encoding="utf-8")
